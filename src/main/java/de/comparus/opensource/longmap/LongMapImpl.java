@@ -1,43 +1,54 @@
 package de.comparus.opensource.longmap;
 
 import java.lang.reflect.Array;
-import java.lang.reflect.ParameterizedType;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
+@SuppressWarnings("unchecked")
 public class LongMapImpl<V> implements LongMap<V> {
 
     private Basket[] baskets;
 
+    private final int capacity;
+
     private final int DEFAULT_CAPACITY = 16;
     private final static double LOAD_FACTOR = 0.75;
 
-    private Class<V> genericType;
+    private Class<? extends  V> genericType;
 
-    @SuppressWarnings("unchecked")
+
+
     public LongMapImpl() {
-        genericType = (Class<V>) ((ParameterizedType) getClass()
-                .getGenericSuperclass()).getActualTypeArguments()[0];
-        baskets = (Basket[]) Array.newInstance(genericType, DEFAULT_CAPACITY);
+        capacity = DEFAULT_CAPACITY;
     }
 
     @SuppressWarnings("unchecked")
     public LongMapImpl(int capacity){
-        genericType = (Class<V>) ((ParameterizedType) getClass()
-                .getGenericSuperclass()).getActualTypeArguments()[0];
-        baskets = (Basket[]) Array.newInstance(genericType, capacity);
+        this.capacity = capacity;
     }
 
 
     public V put(long key, V value) {
+        if (genericType == null)
+            genericType = (Class<? extends V>) value.getClass();
+        if (baskets == null)
+            baskets = (Basket[]) Array.newInstance(Basket.class, capacity);
         int index = getIndexForHashCode(getHashCode(key));
+        if (baskets[index] == null){
+            baskets[index] = new Basket();
+        }
         baskets[index].addEntry(new Entry(key,value));
+
         return value;
     }
 
     public V get(long key) {
         int index = getIndexForHashCode(getHashCode(key));
-        return baskets[index].findByKey(key);
+        Optional<Basket> basket = Optional.ofNullable(baskets[index]);
+        return basket.map(b -> b.findByKey(key)).orElse(null);
     }
 
     public V remove(long key) {
@@ -45,15 +56,19 @@ public class LongMapImpl<V> implements LongMap<V> {
     }
 
     public boolean isEmpty() {
-        return false;
+        return size() == 0;
     }
 
     public boolean containsKey(long key) {
-        return false;
+        return Arrays.stream(baskets)
+                .anyMatch(basket -> Optional.ofNullable(basket.findByKey(key))
+                        .isPresent());
     }
 
     public boolean containsValue(V value) {
-        return false;
+        return Arrays.stream(baskets).
+                anyMatch(basket -> Optional.ofNullable(basket.finByValue(value))
+                        .isPresent());
     }
 
     public long[] keys() {
@@ -61,11 +76,22 @@ public class LongMapImpl<V> implements LongMap<V> {
     }
 
     public V[] values() {
-        return null;
+        List<V> values = Arrays.stream(baskets)
+                .flatMap(basket -> basket.getEntries()
+                        .stream())
+                .map(entry -> entry.value)
+                .collect(Collectors.toList());
+        return values.toArray(((V[]) Array.newInstance(genericType, values.size())));
     }
 
     public long size() {
-        return 0;
+        long size = 0;
+        for (Basket basket : baskets){
+            if (basket != null){
+                size += basket.getEntries().size();
+            }
+        }
+        return size;
     }
 
     public void clear() {
@@ -78,6 +104,11 @@ public class LongMapImpl<V> implements LongMap<V> {
 
     private int getIndexForHashCode(int hashCode){
         return hashCode % baskets.length;
+    }
+
+    private void calcSixe(){
+        int critical_size = (int) (capacity * LOAD_FACTOR);
+
     }
 
     private class Basket {
@@ -98,6 +129,15 @@ public class LongMapImpl<V> implements LongMap<V> {
                     .findFirst()
                     .map(Entry::getValue)
                     .orElse(null);
+        }
+
+        private Long finByValue(V value){
+            return entries.stream()
+                    .filter(entry -> entry.value.equals(value))
+                    .findFirst()
+                    .map(Entry::getKey)
+                    .orElse(null);
+
         }
     }
     
